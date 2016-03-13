@@ -33,6 +33,7 @@ class DataModal(object):
         cur.execute('DROP TABLE IF EXISTS ' + table_name)
         sql_create = '''CREATE TABLE `%s` (
             `id` INTEGER PRIMARY KEY AUTOINCREMENT,
+            `original_train_num` TEXT NOT NULL,
             `train_num` TEXT NOT NULL,
             `train_num2` TEXT DEFAULT NULL,
             `station_name` TEXT NOT NULL,
@@ -58,8 +59,8 @@ class DataModal(object):
 
         cur.execute('''SELECT COUNT(*)
                             FROM `%s`
-                            WHERE `train_num` = ? OR `train_num2` = ?''' % (table, ),
-                          (train_number, train_number, ))
+                            WHERE `original_train_num` = ?''' % (table, ),
+                          (train_number, ))
 
         ret = cur.fetchone()[0] > 0
         cur.close()
@@ -73,13 +74,14 @@ class DataModal(object):
         try:
             for item in info:
                 cursor.execute('''
-                    INSERT INTO %s (`train_num`,
+                    INSERT INTO %s (`original_train_num`,
+                                    `train_num`,
                                     `train_num2`,
                                     `station_name`,
                                     `arrival_time`,
                                     `departure_time`,
                                     `remain_time`)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                 ''' % (table, ), item)
             conn.commit()
         finally:
@@ -95,10 +97,10 @@ def time_to_seconds(str_time):
 
 def get_train_info(url):
     pq = pyquery.PyQuery(urllib2.urlopen(url, timeout=10).read())
-    exp = r'^.*?([A-Z]?\d{1,5})(?:/([A-Z]?\d{1,5}))?.*?$'
+    exp = r'^.*?(([A-Z]?\d{1,5})(?:/([A-Z]?\d{1,5}))?).*?$'
     match = re.compile(exp).match(pq("h1").text())
 
-    train_num, train_num2 = match.group(1), match.group(2)
+    original_train_num, train_num, train_num2 = match.group(1), match.group(2), match.group(3)
 
     rows = pq("#stationInfo tr:gt(0)")
     parser = [
@@ -114,7 +116,7 @@ def get_train_info(url):
     ret = []
     for i in xrange(len(rows)):
         item = rows.eq(i)("td")
-        data = [train_num, train_num2] + [parser[i](item.eq(i).text()) for i in xrange(len(item))][1:5]
+        data = [original_train_num, train_num, train_num2] + [parser[i](item.eq(i).text()) for i in xrange(len(item))][1:5]
         ret.append(tuple(data))
 
     return ret
@@ -209,7 +211,7 @@ def main(argv):
                 try:
                     data_modal.insert_train_info(table, train_info)
                     for arrival in train_info:
-                        print '%s at %02d:%02d' % (arrival[2], arrival[3] / 60, arrival[3] % 60)
+                        print '%s at %02d:%02d' % (arrival[3], arrival[4] / 60, arrival[4] % 60)
                 except Exception, e:
                     print e
                     error_count += 1
