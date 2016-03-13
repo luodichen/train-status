@@ -70,21 +70,21 @@ class DataModal(object):
     def insert_train_info(self, table, info):
         conn = self.get_conn()
         cursor = conn.cursor()
-
-        for item in info:
-            cursor.execute('''
-                INSERT INTO %s (`train_num`,
-                                `train_num2`,
-                                `station_name`,
-                                `arrival_time`,
-                                `departure_time`,
-                                `remain_time`)
-                    VALUES (?, ?, ?, ?, ?, ?)
-            ''' % (table, ), item)
-
-        conn.commit()
-        cursor.close()
-        conn.close()
+        try:
+            for item in info:
+                cursor.execute('''
+                    INSERT INTO %s (`train_num`,
+                                    `train_num2`,
+                                    `station_name`,
+                                    `arrival_time`,
+                                    `departure_time`,
+                                    `remain_time`)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                ''' % (table, ), item)
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
 
 def time_to_seconds(str_time):
     ret = 0
@@ -154,6 +154,7 @@ def get_province_list():
     return ret
 
 def main(argv):
+    error_count = 0
     database = '.' + os.path.sep + 'data.sqlite3'
 
     if len(argv) > 1:
@@ -164,44 +165,57 @@ def main(argv):
 
     for province in get_province_list():
         print province[0]
-        while True:
+        province_retry = 0
+        while province_retry < 3:
             try:
                 station_list = get_province_stations_list(province[1])
             except Exception, e:
                 print e
                 print 'retry...'
+                province_retry += 1
                 continue
             break
 
         for station in station_list:
             print station[0]
-            while True:
+            station_retry = 0
+            while station_retry < 3:
                 try:
                     train_list = get_station_train_list(station[1])
                 except Exception, e:
                     print e
                     print 'retry...'
+                    station_retry += 1
                     continue
                 break
 
             for train in train_list:
                 print train[0]
-                while True:
+                if data_modal.train_exists(table, train[0]):
+                    print 'exists, skip.'
+                    continue
+
+                train_retry = 0
+                while train_retry < 3:
                     try:
                         train_info = get_train_info(train[1])
                     except Exception, e:
                         print e
                         print 'retry...'
+                        train_retry += 1
                         continue
                     break
 
-                if data_modal.train_exists(table, train_info[0][0]):
-                    print 'exists, skip.'
+                try:
+                    data_modal.insert_train_info(table, train_info)
+                    for arrival in train_info:
+                        print '%s at %02d:%02d' % (arrival[2], arrival[3] / 60, arrival[3] % 60)
+                except Exception, e:
+                    print e
+                    error_count += 1
                     continue
 
-                data_modal.insert_train_info(table, train_info)
-                for arrival in train_info:
-                    print '%s at %02d:%02d' % (arrival[2], arrival[3] / 60, arrival[3] % 60)
+    print '%d error(s)' % (error_count, )
 
 if __name__ == '__main__':
     main(sys.argv)
